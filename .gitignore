@@ -1,2 +1,8 @@
 #ignore this folders
 node_modules/
+cred/
+.vscode/
+#ignore files
+.firebaserc
+database.rules.json
+firebase.json
