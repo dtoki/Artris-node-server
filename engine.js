@@ -1,128 +1,150 @@
-const TetrisBoard = require('./lib/tetris.board.js');
-const TetrisBlock = require('./lib/tetris.block.js');
-const THREE = require('three');
-const Tetris = require('./lib/tetris.js');
 const events = require('events');
+const THREE = require('three');
+const { blockFactory } = require('./lib/block');
+const { boardFactory } = require('./lib/board');
+const { configFactory } = require('./lib/config');
+const { utils } = require('./lib/utils');
 
-// Engine config
-Tetris.gameStepTime = 1000; // ms
-Tetris.frameTime = 0; // ms
-Tetris.cumulatedFrameTime = 0; // ms
-Tetris._lastFrameTime = Date.now(); // timestamp assume it's 1 starting
-Tetris.gameOver = false;
-Tetris.staticBlocks = [];
-Tetris.frameRate = 1000 / 60; // 60fps
-Tetris.zColors = [
-  0x6666ff,
-  0x66ffff,
-  0xcc68ee,
-  0x666633,
-  0x66ff66,
-  0x9966ff,
-  0x00ff66,
-  0x66ee33,
-  0x003399,
-  0x330099,
-  0xffa500,
-  0x99ff00,
-  0xee1289,
-  0x71c671,
-  0x00bfff,
-  0x666633,
-  0x669966,
-  0x9966ff
-];
-
-let run = function() {
-  let time = Date.now();
-  Tetris.frameTime = time - Tetris._lastFrameTime; //  1 in the frame time (2-1)
-  Tetris._lastFrameTime = time; // Last frame time is now 2
-  Tetris.cumulatedFrameTime += Tetris.frameTime; // 1 is the cummilated frameTime
-
-  while (Tetris.cumulatedFrameTime > Tetris.gameStepTime) {
-    // While 1 > 1000
-    Tetris.cumulatedFrameTime -= Tetris.gameStepTime; //
-    Tetris.Block.move(0, 0, -1, data => {
-      this.util.emit('newEngineState', data);
-    }); // Default move by 1 steop down
+/**
+ * Engine configuration
+ */
+function engineFactory() {
+  function gameStateFactory(timeStep = 1000, frameRate = 60) {
+    // time is in ms
+    return {
+      gameStepTime: timeStep,
+      frameTime: 0,
+      cumulatedFrameTime: 0,
+      _lastFrameTime: Date.now(), // timestamp assume it's 1 starting
+      gameOver: false,
+      staticBlocks: [],
+      frameRate: timeStep / frameRate
+    };
   }
 
-  if (Tetris.gameOver) {
-    console.log('Game is over');
+  const gameState = gameStateFactory();
+  const config = configFactory();
+  const scene = new THREE.Scene();
+  const staticBlocks = gameState.staticBlocks;
+
+  function addStaticBlock({ pos: { x, y, z } }) {
+    const { blockSize, boundingBoxConfig: { splitX, splitY, splitZ } } = config;
+    if (staticBlocks[x] === undefined) staticBlocks[x] = [];
+    if (staticBlocks[x][y] === undefined) staticBlocks[x][y] = [];
+
+    const mesh = THREE.SceneUtils.createMultiMaterialObject(
+      new THREE.CubeGeometry(blockSize, blockSize, blockSize),
+      [
+        new THREE.MeshBasicMaterial({
+          color: 0x000000,
+          flatShading: THREE.FlatShading,
+          wireframe: true,
+          transparent: true
+        })
+      ]
+    );
+
+    mesh.position.x = (x - splitX / 2) * blockSize + blockSize / 2;
+    mesh.position.y = (y - splitY / 2) * blockSize + blockSize / 2;
+    mesh.position.z = (z - splitZ / 2) * blockSize + blockSize / 2;
+
+    scene.add(mesh);
+    staticBlocks[x][y][z] = mesh;
   }
 
-  if (!Tetris.gameOver) requestAnimationFrame.call(this);
-};
+  const board = boardFactory({
+    config,
+    utils,
+    scene,
+    staticBlocks,
+    addStaticBlock
+  });
+  const block = blockFactory({
+    config,
+    utils,
+    board,
+    gameState,
+    scene,
+    addStaticBlock
+  });
 
-let init = function init() {
-  this.run = run;
-  // Make a copy of the boxconfig
-  let boundingBoxConfig = Tetris.boundingBoxConfig;
-  Object.freeze(boundingBoxConfig);
-  // Init the default board
-  Tetris.Board.init(
-    boundingBoxConfig.splitX,
-    boundingBoxConfig.splitY,
-    boundingBoxConfig.splitZ
-  );
-  // Create the 3d mesh and parse the bounding box to the user,
-  let boundingBox = new THREE.Mesh(
-    new THREE.CubeGeometry(
-      boundingBoxConfig.width,
-      boundingBoxConfig.height,
-      boundingBoxConfig.depth,
-      boundingBoxConfig.splitX,
-      boundingBoxConfig.splitY,
-      boundingBoxConfig.splitZ
-    )
-  );
-  // Create scene
-  Tetris.scene = new THREE.Scene();
-  // Generate block
-  Tetris.Block.generate();
-  this.util = new events.EventEmitter();
-  return this;
-};
+  const { boundingBoxConfig: { splitX, splitY, splitZ } } = config;
+  board.init(splitX, splitY, splitZ);
+  block.generate();
 
-//  Static function
-let requestAnimationFrame = function() {
-  this.updateTimeout = setTimeout(this.run.bind(this), Tetris.frameRate);
-};
+  function run(util) {
+    const time = Date.now();
+    gameState.frameTime = time - gameState._lastFrameTime; //  1 in the frame time (2-1)
+    gameState._lastFrameTime = time; // Last frame time is now 2
+    gameState.cumulatedFrameTime += gameState.frameTime; // 1 is the cummilated frameTime
 
-// Add the block to the static mesh
-Tetris.addStaticBlock = function(x, y, z) {
-  if (Tetris.staticBlocks[x] === undefined) Tetris.staticBlocks[x] = [];
-  if (Tetris.staticBlocks[x][y] === undefined) Tetris.staticBlocks[x][y] = [];
+    while (gameState.cumulatedFrameTime > gameState.gameStepTime) {
+      gameState.cumulatedFrameTime -= gameState.gameStepTime;
+      block.move({
+        pos: { x: 0, y: 0, z: -1 },
+        callback: data => {
+          util.emit('newEngineState', data);
+        }
+      }); // Default move by 1 steop down
+    }
 
-  let mesh = THREE.SceneUtils.createMultiMaterialObject(
-    new THREE.CubeGeometry(
-      Tetris.blockSize,
-      Tetris.blockSize,
-      Tetris.blockSize
-    ),
-    [
-      new THREE.MeshBasicMaterial({
-        color: 0x000000,
-        flatShading: THREE.FlatShading,
-        wireframe: true,
-        transparent: true
-      })
-    ]
-  );
+    if (gameState.gameOver) {
+      console.log('Game is over');
+    }
 
-  mesh.position.x =
-    (x - Tetris.boundingBoxConfig.splitX / 2) * Tetris.blockSize +
-    Tetris.blockSize / 2;
-  mesh.position.y =
-    (y - Tetris.boundingBoxConfig.splitY / 2) * Tetris.blockSize +
-    Tetris.blockSize / 2;
-  mesh.position.z =
-    (z - Tetris.boundingBoxConfig.splitZ / 2) * Tetris.blockSize +
-    Tetris.blockSize / 2;
+    if (!gameState.gameOver) requestAnimationFrame(util);
+  }
 
-  Tetris.scene.add(mesh);
-  Tetris.staticBlocks[x][y][z] = mesh;
-};
+  function requestAnimationFrame(util) {
+    setTimeout(() => {
+      run(util);
+    }, gameState.frameRate);
+  }
 
-// Export the following modules
-module.exports.init = init;
+  /**
+   * Firebase helpers
+   */
+  function processGestureObject(snapshot) {
+    // Processes the deep tree and turns it into a flat object
+    const result = [];
+    const objectToInsert = {};
+    objectToInsert['key'] = Object.keys(snapshot.val())[0];
+    // << in or of?
+    for (const gesture in snapshot.val()[objectToInsert.key].gestures) {
+      objectToInsert['gesture'] = gesture;
+      objectToInsert['action'] = snapshot.val()[objectToInsert.key].gestures[
+        objectToInsert.gesture
+      ];
+      // Push copy of object into array
+      result.push(JSON.parse(JSON.stringify(objectToInsert)));
+    }
+    return result;
+  }
+
+  function registerGestureListner(session, gameSessionGesturePath) {
+    const gestureRef = firebase_admin.database().ref(gameSessionGesturePath);
+    gestureRef.on('value', snapshot => {
+      if (snapshot.val() != null) {
+        onGestureChange(session, snapshot);
+      }
+    });
+    session.gestureRef = gestureRef;
+  }
+
+  function onGestureChange(session, snapshot) {
+    const result = processGestureObject(snapshot);
+    result.forEach(element => {
+      session.gesture_queue.push(element);
+    });
+    console.log(JSON.stringify(session.gesture_queue));
+  }
+
+  return {
+    run,
+    registerGestureListner,
+    onGestureChange,
+    util: new events.EventEmitter()
+  };
+}
+
+module.exports.engine = engineFactory;
