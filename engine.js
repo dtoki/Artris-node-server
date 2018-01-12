@@ -1,9 +1,10 @@
-const events = require('events');
-const THREE = require('three');
-const { blockFactory } = require('./lib/block');
-const { boardFactory } = require('./lib/board');
-const { configFactory } = require('./lib/config');
-const { utils } = require('./lib/utils');
+const events = require("events");
+const THREE = require("three");
+const { blockFactory } = require("./lib/block");
+const { boardFactory } = require("./lib/board");
+const { configFactory } = require("./lib/config");
+const { utils } = require("./lib/utils");
+const { CONSTANTS } = require("./lib/constants");
 
 /**
  * Engine configuration
@@ -26,7 +27,7 @@ function engineFactory() {
   const config = configFactory();
   const scene = new THREE.Scene();
   const staticBlocks = gameState.staticBlocks;
-
+  const gestureQueue = [];
   function addStaticBlock({ pos: { x, y, z } }) {
     const { blockSize, boundingBoxConfig: { splitX, splitY, splitZ } } = config;
     if (staticBlocks[x] === undefined) staticBlocks[x] = [];
@@ -79,17 +80,19 @@ function engineFactory() {
     gameState.cumulatedFrameTime += gameState.frameTime; // 1 is the cummilated frameTime
 
     while (gameState.cumulatedFrameTime > gameState.gameStepTime) {
+      processQueue({block, util});
+      clearQueue(gestureQueue);
       gameState.cumulatedFrameTime -= gameState.gameStepTime;
       block.move({
         pos: { x: 0, y: 0, z: -1 },
         callback: data => {
-          util.emit('newEngineState', data);
+          util.emit("newEngineState", data);
         }
-      }); // Default move by 1 steop down
+      }); // Default move by 1 step down
     }
 
     if (gameState.gameOver) {
-      console.log('Game is over');
+      console.log("Game is over");
     }
 
     if (!gameState.gameOver) requestAnimationFrame(util);
@@ -108,11 +111,11 @@ function engineFactory() {
     // Processes the deep tree and turns it into a flat object
     const result = [];
     const objectToInsert = {};
-    objectToInsert['key'] = Object.keys(snapshot.val())[0];
+    objectToInsert["key"] = Object.keys(snapshot.val())[0];
     // << in or of?
     for (const gesture in snapshot.val()[objectToInsert.key].gestures) {
-      objectToInsert['gesture'] = gesture;
-      objectToInsert['action'] = snapshot.val()[objectToInsert.key].gestures[
+      objectToInsert["gesture"] = gesture;
+      objectToInsert["action"] = snapshot.val()[objectToInsert.key].gestures[
         objectToInsert.gesture
       ];
       // Push copy of object into array
@@ -123,7 +126,7 @@ function engineFactory() {
 
   function registerGestureListner(session, gameSessionGesturePath) {
     const gestureRef = firebase_admin.database().ref(gameSessionGesturePath);
-    gestureRef.on('value', snapshot => {
+    gestureRef.on("value", snapshot => {
       if (snapshot.val() != null) {
         onGestureChange(session, snapshot);
       }
@@ -139,9 +142,55 @@ function engineFactory() {
     console.log(JSON.stringify(session.gesture_queue));
   }
 
+  function processQueue(obj) {
+    const { block, util } = obj;
+    gestureQueue.forEach(value => {
+      switch (value) {
+        case CONSTANTS().GESTURES.MOVE_LEFT:
+          block.move({
+            pos: { x: -1, y: 0, z: 0 },
+            callback: data => {
+              util.emit("newEngineState", data);
+            }
+          });
+          break;
+        case CONSTANTS().GESTURES.MOVE_RIGHT:
+          block.move({
+            pos: { x: 1, y: 0, z: 0 },
+            callback: data => {
+              util.emit("newEngineState", data);
+            }
+          });
+          break;
+        case CONSTANTS().GESTURES.MOVE_UP:
+          block.move({
+            pos: { x: 0, y: 1, z: 0 },
+            callback: data => {
+              util.emit("newEngineState", data);
+            }
+          });
+          break;
+        case CONSTANTS().GESTURES.MOVE_DOWN:
+          block.move({
+            pos: { x: 0, y: -1, z: 0 },
+            callback: data => {
+              util.emit("newEngineState", data);
+            }
+          });
+          break;
+        default:
+          break;
+      }
+    });
+  }
+
+  function clearQueue() {
+    while (gestureQueue.shift() !== undefined) {}
+  }
   return {
     run,
     registerGestureListner,
+    gestureQueue,
     onGestureChange,
     util: new events.EventEmitter()
   };

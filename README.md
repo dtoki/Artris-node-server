@@ -1,6 +1,6 @@
 # ARTris game server
 
-Game engine server for ARTris ios app. Special thanks to [fridek](https://github.com/fridek) the core or our game engine is based on a prior work [of work](https://github.com/dtoki/Threejs-Tetris) 
+Game engine server for ARTris ios app. Special thanks to [fridek](https://github.com/fridek) the core or our game engine is based on on his [tetris project](https://github.com/dtoki/Threejs-Tetris) 
 
 ## Development
 

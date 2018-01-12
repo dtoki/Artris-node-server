@@ -1,7 +1,8 @@
 // Import the following modules and service key
 const admin = require('firebase-admin');
 const { engine } = require('./engine');
-
+const { gestureListner } = require('./lib/gesture');
+const { CONSTANTS } = require('./lib/constants'); 
 // TODO: you need to create a firebase project and
 //       download the service key into a folder in the root and name it cred
 const serviceAccount = require('./cred/serviceAccountKey.json');
@@ -26,13 +27,33 @@ rootDbRef.ref('game-session/').once('child_added', snapshot => {
 });
 
 function createNewGameSession(snapshot) {
+  const {setup} = snapshot.val();
+  const p1Id = setup.player_1_id;
+  const listnerUrl = String( "game-session/" + snapshot.key + `/${p1Id}/gestures`);
+  
   // creates and initializes a new game session and then returns it
   const gameSession = engine();
+  const gameGestureListner = gestureListner(listnerUrl);
   gameSession.run(gameSession.util);
   gameSession.util.on('newEngineState', newGameState => {
     const cells = transformCellCoordinates(newGameState);
     updateTetrisGrid(snapshot.key, Object.keys(newGameState)[0], cells);
   });
+  
+  // Subscribe for event changes the gesture listner
+  gameGestureListner.subscribe(CONSTANTS().GESTURES.MOVE_LEFT, () => {
+    gameSession.gestureQueue.push(CONSTANTS().GESTURES.MOVE_LEFT);
+  });
+  gameGestureListner.subscribe(CONSTANTS().GESTURES.MOVE_UP, () => {
+    gameSession.gestureQueue.push(CONSTANTS().GESTURES.MOVE_UP);
+  });
+  gameGestureListner.subscribe(CONSTANTS().GESTURES.MOVE_RIGHT, () => {
+    gameSession.gestureQueue.push(CONSTANTS().GESTURES.MOVE_RIGHT);
+  });
+  gameGestureListner.subscribe(CONSTANTS().GESTURES.MOVE_DOWN, () => {
+    gameSession.gestureQueue.push(CONSTANTS().GESTURES.MOVE_DOWN);
+  });
+
   return gameSession;
 }
 
